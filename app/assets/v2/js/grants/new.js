@@ -9,6 +9,26 @@ $(document).ready(function() {
   }
 });
 
+function saveGrant({grantData = [], isFinal = false}) {
+  $.ajax({
+    type: 'post',
+    url: '',
+    data: data,
+    success: json => {
+      if(isFinal) {
+        document.suppress_loading_leave_code = true;
+        window.location = json.url;
+      }
+
+      console.log('successfully saved grant');
+    },
+    error: () => {
+      _alert({ message: gettext('Your grant failed to save. Please try again.') }, 'error');
+    }
+  });
+}
+
+
 const init = () => {
   if (localStorage['grants_quickstart_disable'] !== 'true') {
     window.location = document.location.origin + '/grants/quickstart';
@@ -98,54 +118,41 @@ const init = () => {
               'csrfmiddlewaretoken': $("#create-grant input[name='csrfmiddlewaretoken']").val()
             };
 
-            $.ajax({
-              type: 'post',
-              url: '',
-              data: data,
-              success: json => {
-                console.log('successfully saved grant');
-              },
-              error: () => {
-                _alert({ message: gettext('Your grant failed to save. Please try again.') }, 'error');
-              }
-            });
+            saveGrant({grantData:data});
 
             document.issueURL = linkURL;
             $('#transaction_url').attr('href', linkURL);
             enableWaitState('#new-grant');
 
-            var callFunctionWhenTransactionMined = function(transactionHash) {
+            var checkReceipt = function(transactionHash) {
               web3.eth.getTransactionReceipt(transactionHash, function(error, result) {
                 if (result) {
+                  if(result.contractAddress) {
+                    let data = {
+                      'contract_address': result.contractAddress,
+                      'csrfmiddlewaretoken': $("#create-grant input[name='csrfmiddlewaretoken']").val(),
+                      'transaction_hash': $('#transaction_hash').val()
+                    };
 
-                  let data = {
-                    'contract_address': result.contractAddress,
-                    'csrfmiddlewaretoken': $("#create-grant input[name='csrfmiddlewaretoken']").val(),
-                    'transaction_hash': $('#transaction_hash').val()
-                  };
+                    saveGrant({grantData:data, isFinal:true});
 
-                  $.ajax({
-                    type: 'post',
-                    url: '',
-                    data: data,
-                    success: json => {
-                      document.suppress_loading_leave_code = true;
-                      window.location = json.url;
-                    },
-                    error: () => {
-                      _alert({ message: gettext('Your grant failed to save. Please try again.') }, 'error');
+                  } else {
+                    // What property can we check on the result to see the replacement transaction
+                    if (result.somethingsomething) {
+                        console.log('Dropped transaction detected: ' + transactionHash);
+                        console.log('Replacement transaction: ' + result.somethingsomething);
+                        checkReceipt(result.somethingsomething);
                     }
-                  });
-
+                  }
                 } else {
                   setTimeout(() => {
-                    callFunctionWhenTransactionMined(transactionHash);
-                  }, 1000);
+                    checkReceipt(transactionHash);
+                  }, 1000
                 }
               });
             };
 
-            callFunctionWhenTransactionMined(transactionHash);
+            checkReceipt(transactionHash);
           });
           // .on('receipt', function(receipt) {
           //   $('#contract_address').val(receipt.contractAddress);
