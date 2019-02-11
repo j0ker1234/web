@@ -28,6 +28,32 @@ function saveGrant({grantData = [], isFinal = false}) {
   });
 }
 
+function processReceipt(receipt) {
+    let data = {
+      'contract_address': receipt.contractAddress,
+      'csrfmiddlewaretoken': $("#create-grant input[name='csrfmiddlewaretoken']").val(),
+      'transaction_hash': $('#transaction_hash').val()
+    };
+
+    saveGrant({grantData:data, isFinal:true});
+}
+
+function checkNewBlockForContractCreation(block) {
+  // for each transaction, see if a) we sent it b) its the correct nonce
+  for (var i = 0; i < block.transactions.length; i += 1) {
+    if (block.transactions[i].from == accounts[0]
+        and block.transactions[i].hash not in potentialGrantCreationTxnHashes
+        and block.transactions[i].nonce == grantCreationNonce) {
+      // if so, get the contract address
+      web3.eth.getTransactionReceipt(block.transactions[i].hash, function(error, result) {
+        if (result and result.contractAddress) {
+          return result;
+        }
+      }
+    }
+  }
+  return null;
+}
 
 const init = () => {
   if (localStorage['grants_quickstart_disable'] !== 'true') {
@@ -124,47 +150,43 @@ const init = () => {
             $('#transaction_url').attr('href', linkURL);
             enableWaitState('#new-grant');
 
-            var checkReceipt = function(transactionHash) {
-              web3.eth.getTransactionReceipt(transactionHash, function(error, result) {
-                if (result) {
-                  if(result.contractAddress) {
-                    let data = {
-                      'contract_address': result.contractAddress,
-                      'csrfmiddlewaretoken': $("#create-grant input[name='csrfmiddlewaretoken']").val(),
-                      'transaction_hash': $('#transaction_hash').val()
-                    };
-
-                    saveGrant({grantData:data, isFinal:true});
-
-                  } else {
-                    // What property can we check on the result to see the replacement transaction
-                    if (result.somethingsomething) {
-                        console.log('Dropped transaction detected: ' + transactionHash);
-                        console.log('Replacement transaction: ' + result.somethingsomething);
-                        checkReceipt(result.somethingsomething);
+            var checkForContractCreation = function(transactionHash) {
+              web3.eth.getTransactionReceipt(transactionHash, function(error, receipt) {
+                if (receipt and receipt.contractAddress) {
+                  processReceipt(result);
+                  return;
+                } else {
+                  // start watching for re-issued transaction with same nonce, sender, TODO: contract bytecode
+                  // get current block and not recheck the same block
+                  if (eth.blockNumber not in checkedBlocks) {
+                    let block = eth.getBlock(eth.blockNumber, true);
+                    // if we get a new block with transactions...
+                    if (block and block.transactions) {
+                      // check the newly seen block for a valid receipt
+                      let receipt = checkNewBlockForContractCreation(block);
+                      if (receipt) {
+                        processReceipt(receipt);
+                      } else {
+                        // note that this block has been checked
+                        checkedBlocks.append(block.number);
+                      }
                     }
                   }
-                } else {
-                  setTimeout(() => {
-                    checkReceipt(transactionHash);
-                  }, 1000
-                }
-              });
-            };
 
-            checkReceipt(transactionHash);
-          });
-          // .on('receipt', function(receipt) {
-          //   $('#contract_address').val(receipt.contractAddress);
-          // }).then(function(contractInstance) {
-          //   console.log(contractInstance);
-          //   $.each($(form).serializeArray(), function() {
-          //     data[this.name] = this.value;
-          //   });
-          //   console.log(data);
-          //   // form.submit();
-          // });
-        });
+                  // no valid receipt to process, try again in 10 seconds
+                  setTimeout(() => {
+                    checkForContractCreation(transactionHash);
+                  }, 1000]
+
+                } // end if receipt else
+              } // end get txn receipt
+            }; // end checkForContractCreation function declaration
+
+            // initial check
+            checkForContractCreation(potentialGrantCreationTxnHashes);
+
+          }); // end onTransactionHash
+        }); // end getId
       });
     }
   });
