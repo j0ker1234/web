@@ -15,7 +15,7 @@ function saveGrant({grantData = [], isFinal = false}) {
     url: '',
     data: data,
     success: json => {
-      if(isFinal) {
+      if (isFinal) {
         document.suppress_loading_leave_code = true;
         window.location = json.url;
       }
@@ -29,27 +29,27 @@ function saveGrant({grantData = [], isFinal = false}) {
 }
 
 function processReceipt(receipt) {
-    let data = {
-      'contract_address': receipt.contractAddress,
-      'csrfmiddlewaretoken': $("#create-grant input[name='csrfmiddlewaretoken']").val(),
-      'transaction_hash': $('#transaction_hash').val()
-    };
+  let data = {
+    'contract_address': receipt.contractAddress,
+    'csrfmiddlewaretoken': $("#create-grant input[name='csrfmiddlewaretoken']").val(),
+    'transaction_hash': $('#transaction_hash').val()
+  };
 
-    saveGrant({grantData:data, isFinal:true});
+  saveGrant({grantData: data, isFinal: true});
 }
 
-function checkNewBlockForContractCreation(block) {
+function checkNewBlockForContractCreation(block, initialTxnHash) {
   // for each transaction, see if a) we sent it b) its the correct nonce
   for (var i = 0; i < block.transactions.length; i += 1) {
-    if (block.transactions[i].from == accounts[0]
-        and block.transactions[i].hash not in potentialGrantCreationTxnHashes
-        and block.transactions[i].nonce == grantCreationNonce) {
+    if (block.transactions[i].from == accounts[0] &&
+        block.transactions[i].hash != initialTxnHash &&
+        block.transactions[i].nonce == grantCreationNonce) {
       // if so, get the contract address
       web3.eth.getTransactionReceipt(block.transactions[i].hash, function(error, result) {
-        if (result and result.contractAddress) {
+        if (result && result.contractAddress) {
           return result;
         }
-      }
+      });
     }
   }
   return null;
@@ -144,7 +144,7 @@ const init = () => {
               'csrfmiddlewaretoken': $("#create-grant input[name='csrfmiddlewaretoken']").val()
             };
 
-            saveGrant({grantData:data});
+            saveGrant({grantData: data});
 
             document.issueURL = linkURL;
             $('#transaction_url').attr('href', linkURL);
@@ -152,18 +152,19 @@ const init = () => {
 
             var checkForContractCreation = function(transactionHash) {
               web3.eth.getTransactionReceipt(transactionHash, function(error, receipt) {
-                if (receipt and receipt.contractAddress) {
+                if (receipt && receipt.contractAddress) {
                   processReceipt(result);
-                  return;
                 } else {
                   // start watching for re-issued transaction with same nonce, sender, TODO: contract bytecode
                   // get current block and not recheck the same block
-                  if (eth.blockNumber not in checkedBlocks) {
+                  if (!(eth.blockNumber in checkedBlocks)) {
                     let block = eth.getBlock(eth.blockNumber, true);
+
                     // if we get a new block with transactions...
-                    if (block and block.transactions) {
+                    if (block && block.transactions) {
                       // check the newly seen block for a valid receipt
-                      let receipt = checkNewBlockForContractCreation(block);
+                      let receipt = checkNewBlockForContractCreation(block, transactionHash);
+
                       if (receipt) {
                         processReceipt(receipt);
                       } else {
@@ -176,10 +177,10 @@ const init = () => {
                   // no valid receipt to process, try again in 10 seconds
                   setTimeout(() => {
                     checkForContractCreation(transactionHash);
-                  }, 1000]
+                  }, 1000);
 
                 } // end if receipt else
-              } // end get txn receipt
+              }); // end get txn receipt
             }; // end checkForContractCreation function declaration
 
             // initial check
